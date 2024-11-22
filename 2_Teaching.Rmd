@@ -1,0 +1,226 @@
+---
+title: "Remote sensing Water Quality Prediction using Random Forest and XGBoost"
+author: "Matthew Ross"
+date: "2024-11-22"
+output: html_document
+---
+
+
+ 
+# Objective
+
+This assignment will guide you through a hands-on exploration of  modeling water quality with remote sensing data. Specifically you will be predicting "Secchi Disk Depth or SDD" which is a measure of water clarity, measured in meters. High values in SDD indicate a deep, blue clear lake, while low values indicate murkey lakes, potentially because algal particls or suspended sediment are occluding light.  You'll start with data exploration and simple models before comparing the performance of two machine learning techniques: Random Forest and XGBoost.
+
+## Steps with Explanations and Tasks:
+
+### 1. Setup and Libraries
+
+The provided code initializes necessary libraries for data manipulation, plotting, and modeling.
+
+Explanation: The tidyverse package is used for data wrangling and visualization, while randomForest and xgboost are machine learning packages for building prediction models.
+
+```{r}
+library(tidyverse) # Data manipulation and visualization
+library(xgboost) # Gradient Boosting
+library(randomForest) # Random Forest
+library(sf) # Spatial data handling
+library(mapview) # Interactive maps
+library(Metrics) # Evaluation metrics
+```
+
+
+
+### 2. Data Exploration
+
+Start by loading the dataset and performing exploratory data analysis (EDA) to understand the relationships between variables.
+
+Explanation: Scatter plots with logarithmic scales and linear regression trends help identify correlations between the response variable (harmonized_value) and predictors.
+
+```{r}
+sdd <- read_csv('data/western_sdd.csv')
+
+# Summary of the target variable
+summary(sdd$harmonized_value)
+
+# Relationships with key variables
+ggplot(sdd, aes(x = harmonized_value, y = red_corr7)) + 
+  geom_point() + 
+  scale_y_log10() + 
+  geom_smooth(method = 'lm', se = F)
+
+ggplot(sdd, aes(x = harmonized_value, y = green_corr7)) + 
+  geom_point() + 
+  scale_y_log10() + 
+  geom_smooth(method = 'lm', se = F)
+
+ggplot(sdd, aes(x = harmonized_value, y = BR_G)) + 
+  geom_point() + 
+  scale_y_log10() + 
+  geom_smooth(method = 'lm', se = F)
+```
+
+
+
+### 3. Mapping Site Locations
+
+Generate a quick map of sampling sites using mapview.
+
+Explanation: Using spatial data visualization, we can verify if site locations correspond to different study parts.
+
+```{r}
+sdd_sites <- sdd %>%
+  distinct(part, lat = WGS84_Latitude, long = WGS84_Longitude) %>%
+  st_as_sf(., coords = c('long', 'lat'), crs = 4263)
+
+# Interactive map
+mapview(sdd_sites, zcol = 'part')
+```
+
+
+
+### 4. Simple Linear Model
+
+Explanation: A simple linear regression model is a baseline to see if linear relationships explain the variation in harmonized_value (sdd).
+
+```{r}
+# Linear regression model
+simple_mod <- lm(harmonized_value ~ red_corr7 * blue_corr7 * green_corr7 * BR_G, data = sdd)
+
+# Summary of the model
+summary(simple_mod)
+
+
+```
+
+
+## Machine Learning Demos
+
+### 5. Random Forest - Naive Splitting
+
+Explanation: A naive random split of training and testing datasets will make performance artificially high, because it doesn't account for data leakage where training data leaks into the test data. 
+
+
+```{r}
+
+set.seed(221432)
+
+# Selecting important variables
+sdd_prepped <- sdd %>%
+  select(harmonized_value, c('R_BS', 'R_BN', 'B_RG', 'BG', 'NmR', 'green_corr7', 'BR_G', 'GR_2', 'fai', 'red_corr7', 'G_BN', 'NmS'))
+
+# Random test-train split
+test_sdd <- sdd_prepped %>% sample_frac(0.2)
+train_sdd <- sdd_prepped %>% anti_join(test_sdd)
+
+# Random Forest model
+rf_mod <- randomForest(harmonized_value ~ ., data = train_sdd, importance = F, ntree = 250)
+
+# Predictions and visualization
+test_sdd$sdd_pred <- predict(rf_mod, test_sdd)
+
+ggplot(test_sdd, aes(y = sdd_pred, x = harmonized_value)) + 
+  geom_point() + 
+  xlab('Observed') + 
+  ylab('Predicted') + 
+  geom_smooth(method = 'lm', se = F) + 
+  geom_abline(intercept = 0, slope = 1, color = 'red')
+
+# Evaluation metrics
+mape(test_sdd$harmonized_value, test_sdd$sdd_pred)
+rmse(test_sdd$harmonized_value, test_sdd$sdd_pred)
+
+```
+
+
+### 6. Random Forest - Spatial Splitting
+
+Explanation: Splitting based on spatial or temporal characteristics (e.g., `part`) ensures that the test set represents unseen conditions. Part is a column that split the data evenly across space into five different domains.
+
+```{r}
+
+# Splitting data by 'part'
+test_sdd <- sdd %>%
+  filter(part != 5) %>%
+  select(harmonized_value, c('R_BS', 'R_BN', 'B_RG', 'BG', 'NmR', 'green_corr7', 'BR_G', 'GR_2', 'fai', 'red_corr7', 'G_BN', 'NmS'))
+
+train_sdd <- sdd %>%
+  filter(part == 5) %>%
+  select(harmonized_value, c('R_BS', 'R_BN', 'B_RG', 'BG', 'NmR', 'green_corr7', 'BR_G', 'GR_2', 'fai', 'red_corr7', 'G_BN', 'NmS'))
+
+# Random Forest model
+rf_mod <- randomForest(harmonized_value ~ ., data = train_sdd, importance = F, ntree = 250)
+
+# Predictions
+test_sdd$sdd_pred <- predict(rf_mod, test_sdd)
+
+# Visualization
+ggplot(test_sdd, aes(y = sdd_pred, x = harmonized_value)) + 
+  geom_point() + 
+  xlab('Observed') + 
+  ylab('Predicted') + 
+  geom_smooth(method = 'lm', se = F) + 
+  geom_abline(intercept = 0, slope = 1, color = 'red')
+
+# Evaluation metrics
+mape(test_sdd$harmonized_value, test_sdd$sdd_pred)
+rmse(test_sdd$harmonized_value, test_sdd$sdd_pred)
+
+```
+
+### 7. XGBoost
+
+XGBoost is a form of a tree based algorithm (like random forest), but with a different approach for optimizing which trees are selected and how parameters for the model are defined. More on xgboost here (https://www.nvidia.com/en-us/glossary/xgboost/)
+
+Use the xgb.DMatrix() function to prepare the data for XGBoost, and configure the model using xgboost().
+
+
+```{r}
+
+# XGBoost task placeholder
+# Convert to matrix
+names(train_sdd)
+names(test_sdd)
+
+#The [-1] removes the harmonized_value column
+train_matrix <- xgb.DMatrix(data = as.matrix(train_sdd[,-1]), 
+                            label = train_sdd$harmonized_value)
+
+#The [-14] removes the sdd_pred from random forest
+test_matrix <- xgb.DMatrix(data = as.matrix(test_sdd[,-c(1,14)]),
+                           label = test_sdd$harmonized_value)
+
+# Train XGBoost model
+xgb_mod <- xgboost(data = train_matrix, 
+                   nrounds = 250,
+                   objective = "reg:squarederror", 
+                   print_every_n = 50,
+                   early_stopping_rounds = 5)
+
+
+# Predictions
+test_sdd$sdd_pred_xgb <- predict(xgb_mod, test_matrix)
+
+# Visualization and evaluation
+ggplot(test_sdd, aes(y = sdd_pred_xgb, x = harmonized_value)) + 
+  geom_point() + 
+  xlab('Observed') + 
+  ylab('Predicted') + 
+  geom_smooth(method = 'lm', se = F) + 
+  geom_abline(intercept = 0, slope = 1, color = 'red')
+
+mape(test_sdd$harmonized_value, test_sdd$sdd_pred_xgb)
+rmse(test_sdd$harmonized_value, test_sdd$sdd_pred_xgb)
+
+
+```
+
+# Playground
+
+Both `xgboost` and `randomForest` have dozens of hyperparameters that you can tune (like eta for xgboost, the learning rate), I encourage you to spend 30 minutes to an hour trying to impove the model performance of our randomforest or our xgboost model by changing these hyperparameters. Doing so will give you a sense of what people in machine learning spend all of their time doing! It will also be the start of your journey to understanding which hyperparameters matter and why. ChatGPT can give pretty helpful advice on how to improve the models and I encourage you to use it, you can send it parts of this code and ask how to alter it.
+
+How much improvement do you get? 
+
+What would be a systematic way to 
+
+
+

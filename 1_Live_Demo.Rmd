@@ -1,0 +1,161 @@
+---
+title: "Live ML Demo"
+author: "Matthew Ross"
+date: "2024-11-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse) #You. know
+library(xgboost) # Gradient Boosting
+library(randomForest) # random forest
+library(sf)
+library(mapview)
+library(Metrics)
+
+
+```
+
+
+# Data Explore
+
+```{r}
+
+sdd <- read_csv('data/western_sdd.csv')
+
+summary(sdd$harmonized_value)
+
+ggplot(sdd, aes(x = harmonized_value, y = red_corr7)) + 
+  geom_point() + 
+  scale_y_log10() + 
+  geom_smooth(method = 'lm', se = F)
+
+
+ggplot(sdd, aes(x = harmonized_value, y = green_corr7)) + 
+  geom_point() + 
+  scale_y_log10() + 
+  geom_smooth(method = 'lm', se = F)
+
+
+ggplot(sdd, aes(x = harmonized_value, y = BR_G)) + 
+  geom_point() + 
+  scale_y_log10() + 
+  geom_smooth(method = 'lm', se = F)
+
+
+```
+
+## Quick site map
+
+```{r}
+sdd_sites <- sdd %>%
+  distinct(part, lat = WGS84_Latitude,
+           long = WGS84_Longitude) %>%
+  st_as_sf(.,coords = c('long','lat'), crs = 4263)
+
+mapview(sdd_sites, zcol = 'part')
+```
+
+
+
+## Quick naive LM
+
+```{r}
+
+simple_mod <- lm(harmonized_value ~ red_corr7*blue_corr7*green_corr7*BR_G,
+                 data = sdd)
+
+summary(simple_mod)
+
+```
+
+
+## Quick naive random_forest
+
+### Truly random test splitting
+
+This is ill advised!
+
+```{r}
+set.seed(221432)
+
+sdd_prepped <- sdd %>%
+  select(harmonized_value, c('R_BS','R_BN','B_RG','BG','NmR',
+                             'green_corr7','BR_G','GR_2','fai','red_corr7','G_BN','NmS'))
+
+
+test_sdd <- sdd_prepped %>%
+  sample_frac(0.2)
+
+train_sdd <- sdd_prepped %>%
+  anti_join(test_sdd)
+
+
+rf_mod <- randomForest(harmonized_value ~ .,
+                       data = train_sdd,
+                       importance = F,
+                       ntree = 250)
+
+
+test_sdd$sdd_pred <- predict(rf_mod, test_sdd)
+
+
+ggplot(test_sdd, aes(y = sdd_pred, 
+                     x = harmonized_value)) + 
+  geom_point() + 
+  xlab('Observed') + 
+  ylab('Predicted') + 
+  geom_smooth(method = 'lm', se = F) + 
+  geom_abline(intercept = 0, slope = 1,
+              color = 'red')
+
+library(Metrics)
+
+mape(test_sdd$harmonized_value, test_sdd$sdd_pred)
+rmse(test_sdd$harmonized_value, test_sdd$sdd_pred)
+```
+
+## Proper train test split
+
+```{r}
+
+
+sdd_prepped <- sdd 
+
+
+test_sdd <- sdd %>%
+  filter(part != 5) %>%
+  select(harmonized_value, c('R_BS','R_BN','B_RG','BG','NmR',
+                             'green_corr7','BR_G','GR_2','fai','red_corr7','G_BN','NmS'))
+
+train_sdd <- sdd %>%
+  filter(part == 5) %>%
+  select(harmonized_value, c('R_BS','R_BN','B_RG','BG','NmR',
+                             'green_corr7','BR_G','GR_2','fai','red_corr7','G_BN','NmS'))
+
+
+rf_mod <- randomForest(harmonized_value ~ .,
+                       data = train_sdd,
+                       importance = F,
+                       ntree = 250)
+
+
+test_sdd$sdd_pred <- predict(rf_mod, test_sdd)
+
+
+ggplot(test_sdd, aes(y = sdd_pred, 
+                     x = harmonized_value)) + 
+  geom_point() + 
+  xlab('Observed') + 
+  ylab('Predicted') + 
+  geom_smooth(method = 'lm', se = F) + 
+  geom_abline(intercept = 0, slope = 1,
+              color = 'red')
+
+
+mape(test_sdd$harmonized_value, test_sdd$sdd_pred)
+rmse(test_sdd$harmonized_value, test_sdd$sdd_pred)
+```
+
