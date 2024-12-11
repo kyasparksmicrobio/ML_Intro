@@ -20,6 +20,8 @@ The provided code initializes necessary libraries for data manipulation, plottin
 Explanation: The tidyverse package is used for data wrangling and visualization, while randomForest and xgboost are machine learning packages for building prediction models.
 
 ```{r}
+install.packages("xgboost")
+
 library(tidyverse) # Data manipulation and visualization
 library(xgboost) # Gradient Boosting
 library(randomForest) # Random Forest

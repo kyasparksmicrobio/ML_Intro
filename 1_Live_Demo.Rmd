@@ -8,6 +8,9 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+install.packages("randomForest")
+install.packages("Metrics")
+
 library(tidyverse) #You. know
 library(xgboost) # Gradient Boosting
 library(randomForest) # random forest
@@ -23,9 +26,11 @@ library(Metrics)
 
 ```{r}
 
-sdd <- read_csv('data/western_sdd.csv')
+sdd <- read.csv("/Users/kyasparks/Desktop/Desktop - MacBook Pro (2)/Kyas_PhD/CSU_2023_2024/Courses/ESS523A/ML_Intro/data/western_sdd.csv")
 
 summary(sdd$harmonized_value)
+  #  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  # 0.100   1.067   2.400   2.813   4.000  18.250 
 
 ggplot(sdd, aes(x = harmonized_value, y = red_corr7)) + 
   geom_point() + 
@@ -94,16 +99,15 @@ train_sdd <- sdd_prepped %>%
 
 
 rf_mod <- randomForest(harmonized_value ~ .,
-                       data = train_sdd,
-                       importance = F,
-                       ntree = 250)
+    data = train_sdd,
+    importance = F,
+    ntree = 250)
 
 
 test_sdd$sdd_pred <- predict(rf_mod, test_sdd)
 
 
-ggplot(test_sdd, aes(y = sdd_pred, 
-                     x = harmonized_value)) + 
+ggplot(test_sdd, aes(y = sdd_pred, x = harmonized_value)) + 
   geom_point() + 
   xlab('Observed') + 
   ylab('Predicted') + 
@@ -113,15 +117,17 @@ ggplot(test_sdd, aes(y = sdd_pred,
 
 library(Metrics)
 
-mape(test_sdd$harmonized_value, test_sdd$sdd_pred)
-rmse(test_sdd$harmonized_value, test_sdd$sdd_pred)
+mape(test_sdd$harmonized_value, test_sdd$sdd_pred) # 0.4304861
+rmse(test_sdd$harmonized_value, test_sdd$sdd_pred) # 1.170683
+
+#Root mean square error (RMSE) is a common metric used in machine learning to evaluate the quality of predictions made by a model
+
+#Mean absolute percentage error measures the average magnitude of error produced by a model, or how far off predictions are on average.
 ```
 
 ## Proper train test split
 
 ```{r}
-
-
 sdd_prepped <- sdd 
 
 
@@ -155,7 +161,7 @@ ggplot(test_sdd, aes(y = sdd_pred,
               color = 'red')
 
 
-mape(test_sdd$harmonized_value, test_sdd$sdd_pred)
-rmse(test_sdd$harmonized_value, test_sdd$sdd_pred)
+mape(test_sdd$harmonized_value, test_sdd$sdd_pred) # 0.5894682
+rmse(test_sdd$harmonized_value, test_sdd$sdd_pred) # 1.472081
 ```
 
